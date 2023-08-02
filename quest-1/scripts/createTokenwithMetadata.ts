@@ -127,7 +127,7 @@ async function createMetadataInstruction(
         createMetadataAccountArgsV3: {
           data: {
             creators: null,
-            name: tokenConfig.name,
+            name: tokenConfig.name.toUpperCase(),
             symbol: tokenConfig.symbol,
             uri: tokenConfig.uri,
             sellerFeeBasisPoints: 0,
@@ -151,7 +151,7 @@ async function createMetadataInstruction(
     // keypair to be used for mint
     const mintKeypair = Keypair.generate();
     console.log(
-      `Mint address - ${config.name}: ${mintKeypair.publicKey.toBase58()}`,
+      `Mint address - ${config.name.toUpperCase()}: ${mintKeypair.publicKey.toBase58()}`,
     );
 
     // token cofig, create mint account, and metadata account for the mint
@@ -177,9 +177,12 @@ async function createMetadataInstruction(
 
     try {
       const signature = await connection.sendTransaction(tx);
-      console.log(`${config.name} Transaction completed`);
+      console.log(`${config.name.toUpperCase()} Transaction completed`);
       console.log(explorerURL({ txSignature: signature }));
-      savePublicKeyToFile(`${config.name}MintKepair`, mintKeypair.publicKey);
+      savePublicKeyToFile(
+        `${config.name.toUpperCase()}MintKepair`,
+        mintKeypair.publicKey,
+      );
     } catch (error) {
       console.error("Faild to send transaction");
       console.log(tx);
