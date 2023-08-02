@@ -6,7 +6,7 @@
     "ts"
   ],
   "scripts": {
-    "demo": "npx ts-node -r tsconfig-paths/register"
+    "challenge": "npx ts-node -r tsconfig-paths/register"
   },
   "dependencies": {
     "@metaplex-foundation/js": "^0.19.3",
