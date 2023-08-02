@@ -27,275 +27,174 @@ import {
   uploadImagAndGetMetadaUri,
 } from "@/libs/helpers";
 
+// TokenConfig interface
+interface TokenConfig {
+  decimals: number;
+  name: string;
+  symbol: string;
+  uri: string;
+}
+
+// Token basic data
+const tokenConfigs = [
+  {
+    name: "gold",
+    image: "coin1-tp.png",
+    symbol: "GOLD",
+    label: "Seven Seas Gold",
+  },
+  {
+    name: "rum",
+    image: "rum.png",
+    symbol: "RUM",
+    label: "Seven Seas Rum",
+  },
+  {
+    name: "cammons",
+    image: "cannon-ball.png",
+    symbol: "CAMMONS",
+    label: "Seven Seas Cammons",
+  },
+];
+
+// define the assorted token config settings
+async function createTokenConfig({
+  name,
+  image,
+  symbol,
+  label,
+}: {
+  name: string;
+  image: string;
+  symbol: string;
+  label: string;
+}) {
+  return {
+    decimals: 2,
+    name: label,
+    symbol,
+    uri: await uploadImagAndGetMetadaUri(connection, payer, image, name),
+  };
+}
+
+//  Instruction to create/initialize Mint account
+async function createMintInstruction(
+  tokinConfig: TokenConfig,
+  mintKeypair: Keypair,
+) {
+  const createMintInstruction = SystemProgram.createAccount({
+    fromPubkey: payer.publicKey,
+    newAccountPubkey: mintKeypair.publicKey,
+    space: MINT_SIZE,
+    lamports: await connection.getMinimumBalanceForRentExemption(MINT_SIZE),
+    programId: TOKEN_PROGRAM_ID,
+  });
+  // initalize that account as a mint
+  const initialMintInstruction = createInitializeMint2Instruction(
+    mintKeypair.publicKey,
+    tokinConfig.decimals,
+    payer.publicKey,
+    payer.publicKey,
+  );
+
+  return [createMintInstruction, initialMintInstruction];
+}
+
+//  Instruction to create Metadata account using PDA
+async function createMetadataInstruction(
+  tokenConfig: TokenConfig,
+  mintKeypair: Keypair,
+) {
+  const metadataAccount = PublicKey.findProgramAddressSync(
+    [
+      Buffer.from("metadata"),
+      METADATA_PROGRAM_ID.toBuffer(),
+      mintKeypair.publicKey.toBuffer(),
+    ],
+    METADATA_PROGRAM_ID,
+  )[0];
+
+  const createMetadataAccountInstruction =
+    createCreateMetadataAccountV3Instruction(
+      {
+        metadata: metadataAccount,
+        mint: mintKeypair.publicKey,
+        mintAuthority: payer.publicKey,
+        payer: payer.publicKey,
+        updateAuthority: payer.publicKey,
+      },
+      {
+        createMetadataAccountArgsV3: {
+          data: {
+            creators: null,
+            name: tokenConfig.name,
+            symbol: tokenConfig.symbol,
+            uri: tokenConfig.uri,
+            sellerFeeBasisPoints: 0,
+            collection: null,
+            uses: null,
+          },
+          collectionDetails: null,
+          isMutable: true,
+        },
+      },
+    );
+
+  return createMetadataAccountInstruction;
+}
+
 (async () => {
   console.log("Payer address:", payer.publicKey.toBase58());
   console.log("Test wallet address:", testWallet.publicKey.toBase58());
 
-  // create new keypairs to be used for mint accounts - gold, rum, cammons
-  const goldMintKerpair = Keypair.generate();
-  const rumMintKerpair = Keypair.generate();
-  const cammonsMintKerpair = Keypair.generate();
+  for (const config of tokenConfigs) {
+    // keypair to be used for mint
+    const mintKeypair = Keypair.generate();
+    console.log(
+      `Mint address - ${config.name}: ${mintKeypair.publicKey.toBase58()}`,
+    );
 
-  console.log("Mint address - Gold: ", goldMintKerpair.publicKey.toBase58());
-  console.log("Mint address - Rum: ", rumMintKerpair.publicKey.toBase58());
-  console.log(
-    "Mint address - Cammons: ",
-    cammonsMintKerpair.publicKey.toBase58(),
-  );
+    // token cofig, create mint account, and metadata account for the mint
+    const tokenConfig = await createTokenConfig(config);
+    const mintInstruction = await createMintInstruction(
+      tokenConfig,
+      mintKeypair,
+    );
+    const metadataInstruction = await createMetadataInstruction(
+      tokenConfig,
+      mintKeypair,
+    );
 
-  // token configurations
-  const gold_token_config = {
-    decimals: 2,
-    name: "Seven Seas Gold",
-    symbol: "GOLD",
-    uri: await uploadImagAndGetMetadaUri(
+    // build transaction and sent to the blockchain
+    const tx = await buildTransaction({
       connection,
-      payer,
-      "coin1-tp.png",
-      "GOLD",
-    ),
-  };
+      payer: payer.publicKey,
+      signers: [payer, mintKeypair],
+      instructions: [...mintInstruction, metadataInstruction],
+    });
 
-  const rum_token_config = {
-    decimals: 2,
-    name: "Seven Seas Rum",
-    symbol: "RUM",
-    uri: await uploadImagAndGetMetadaUri(connection, payer, "rum.png", "RUM"),
-  };
+    printConsoleSeparator();
 
-  const cammons_token_config = {
-    decimals: 2,
-    name: "Seven Seas Cammons",
-    symbol: "CAMMONS",
-    uri: await uploadImagAndGetMetadaUri(
-      connection,
-      payer,
-      "cannon-ball.png",
-      "CAMMONS",
-    ),
-  };
+    try {
+      const signature = await connection.sendTransaction(tx);
+      console.log(`${config.name} Transaction completed`);
+      console.log(explorerURL({ txSignature: signature }));
+      savePublicKeyToFile(`${config.name}MintKepair`, mintKeypair.publicKey);
+    } catch (error) {
+      console.error("Faild to send transaction");
+      console.log(tx);
 
-  // Create instructions for token mint account
-  const createGoldMintAccountInstruction = SystemProgram.createAccount({
-    fromPubkey: payer.publicKey,
-    newAccountPubkey: goldMintKerpair.publicKey,
-    space: MINT_SIZE,
-    lamports: await connection.getMinimumBalanceForRentExemption(MINT_SIZE),
-    programId: TOKEN_PROGRAM_ID,
-  });
+      const failedSig = await extractSignatureFromFailedTransaction(
+        connection,
+        error,
+      );
+      if (failedSig)
+        console.log(
+          "Failed signature:",
+          explorerURL({ txSignature: failedSig }),
+        );
 
-  const createRumMintAccountInstruction = SystemProgram.createAccount({
-    fromPubkey: payer.publicKey,
-    newAccountPubkey: rumMintKerpair.publicKey,
-    space: MINT_SIZE,
-    lamports: await connection.getMinimumBalanceForRentExemption(MINT_SIZE),
-    programId: TOKEN_PROGRAM_ID,
-  });
-
-  const createCammonsMintAccountInstruction = SystemProgram.createAccount({
-    fromPubkey: payer.publicKey,
-    newAccountPubkey: cammonsMintKerpair.publicKey,
-    space: MINT_SIZE,
-    lamports: await connection.getMinimumBalanceForRentExemption(MINT_SIZE),
-    programId: TOKEN_PROGRAM_ID,
-  });
-
-  const initialGoldMintInstruction = createInitializeMint2Instruction(
-    goldMintKerpair.publicKey,
-    gold_token_config.decimals,
-    payer.publicKey,
-    payer.publicKey,
-  );
-
-  const initialRumMintInstruction = createInitializeMint2Instruction(
-    rumMintKerpair.publicKey,
-    rum_token_config.decimals,
-    payer.publicKey,
-    payer.publicKey,
-  );
-
-  const initialCammonsMintInstruction = createInitializeMint2Instruction(
-    cammonsMintKerpair.publicKey,
-    cammons_token_config.decimals,
-    payer.publicKey,
-    payer.publicKey,
-  );
-
-  // derive the pdas for the gold, rum, cammons metadata accounts
-  const goldMetadataAccount = PublicKey.findProgramAddressSync(
-    [
-      Buffer.from("metadata"),
-      METADATA_PROGRAM_ID.toBuffer(),
-      goldMintKerpair.publicKey.toBuffer(),
-    ],
-    METADATA_PROGRAM_ID,
-  )[0];
-
-  const rumMetadataAccount = PublicKey.findProgramAddressSync(
-    [
-      Buffer.from("metadata"),
-      METADATA_PROGRAM_ID.toBuffer(),
-      rumMintKerpair.publicKey.toBuffer(),
-    ],
-    METADATA_PROGRAM_ID,
-  )[0];
-
-  const cammonsMetadataAccount = PublicKey.findProgramAddressSync(
-    [
-      Buffer.from("metadata"),
-      METADATA_PROGRAM_ID.toBuffer(),
-      cammonsMintKerpair.publicKey.toBuffer(),
-    ],
-    METADATA_PROGRAM_ID,
-  )[0];
-
-  console.log("Gold Metadata address:", goldMetadataAccount.toBase58());
-  console.log("Rum Metadata address:", rumMetadataAccount.toBase58());
-  console.log("Cammons Metadata address:", cammonsMetadataAccount.toBase58());
-
-  // create metadata accounts for gold, rum, cammons mints
-  const createGoldMetadataAccountInstruction =
-    createCreateMetadataAccountV3Instruction(
-      {
-        metadata: goldMetadataAccount,
-        mint: goldMintKerpair.publicKey,
-        mintAuthority: payer.publicKey,
-        payer: payer.publicKey,
-        updateAuthority: payer.publicKey,
-      },
-      {
-        createMetadataAccountArgsV3: {
-          data: {
-            creators: null,
-            name: gold_token_config.name,
-            symbol: gold_token_config.symbol,
-            uri: gold_token_config.uri,
-            sellerFeeBasisPoints: 0,
-            collection: null,
-            uses: null,
-          },
-          collectionDetails: null, // for non-nft tokens normally set to null
-          isMutable: true,
-        },
-      },
-    );
-
-  const createRumMetadataAccountInstruction =
-    createCreateMetadataAccountV3Instruction(
-      {
-        metadata: rumMetadataAccount,
-        mint: rumMintKerpair.publicKey,
-        mintAuthority: payer.publicKey,
-        payer: payer.publicKey,
-        updateAuthority: payer.publicKey,
-      },
-      {
-        createMetadataAccountArgsV3: {
-          data: {
-            creators: null,
-            name: rum_token_config.name,
-            symbol: rum_token_config.symbol,
-            uri: rum_token_config.uri,
-            sellerFeeBasisPoints: 0,
-            collection: null,
-            uses: null,
-          },
-          collectionDetails: null,
-          isMutable: true,
-        },
-      },
-    );
-
-  const createCammonsMetadataAccountInstruction =
-    createCreateMetadataAccountV3Instruction(
-      {
-        metadata: cammonsMetadataAccount,
-        mint: cammonsMintKerpair.publicKey,
-        mintAuthority: payer.publicKey,
-        payer: payer.publicKey,
-        updateAuthority: payer.publicKey,
-      },
-      {
-        createMetadataAccountArgsV3: {
-          data: {
-            creators: null,
-            name: cammons_token_config.name,
-            symbol: cammons_token_config.symbol,
-            uri: cammons_token_config.uri,
-            sellerFeeBasisPoints: 0,
-            collection: null,
-            uses: null,
-          },
-          collectionDetails: null,
-          isMutable: true,
-        },
-      },
-    );
-
-  const gold_tx = await buildTransaction({
-    connection,
-    payer: payer.publicKey,
-    signers: [payer, goldMintKerpair],
-    instructions: [
-      createGoldMintAccountInstruction,
-      initialGoldMintInstruction,
-      createGoldMetadataAccountInstruction,
-    ],
-  });
-
-  const rum_tx = await buildTransaction({
-    connection,
-    payer: payer.publicKey,
-    signers: [payer, rumMintKerpair],
-    instructions: [
-      createRumMintAccountInstruction,
-      initialRumMintInstruction,
-      createRumMetadataAccountInstruction,
-    ],
-  });
-
-  const cammons_tx = await buildTransaction({
-    connection,
-    payer: payer.publicKey,
-    signers: [payer, cammonsMintKerpair],
-    instructions: [
-      createCammonsMintAccountInstruction,
-      initialCammonsMintInstruction,
-      createCammonsMetadataAccountInstruction,
-    ],
-  });
-
-  printConsoleSeparator();
-
-  try {
-    const gold_sig = await connection.sendTransaction(gold_tx);
-    console.log("Gold Transaction completed");
-    console.log(explorerURL({ txSignature: gold_sig }));
-
-    const rum_sig = await connection.sendTransaction(rum_tx);
-    console.log("Rum Transaction completed");
-    console.log(explorerURL({ txSignature: rum_sig }));
-
-    const cammons_sig = await connection.sendTransaction(cammons_tx);
-    console.log("Cammons Transaction completed");
-    console.log(explorerURL({ txSignature: cammons_sig }));
-
-    savePublicKeyToFile("goldMintKerpair", goldMintKerpair.publicKey);
-    savePublicKeyToFile("rumMintKerpair", rumMintKerpair.publicKey);
-    savePublicKeyToFile("cammonsMintKerpair", cammonsMintKerpair.publicKey);
-  } catch (error) {
-    console.error("Faild to send transaction");
-    console.log(gold_tx);
-    console.log(rum_tx);
-    console.log(cammons_tx);
-
-    const failedSig = await extractSignatureFromFailedTransaction(
-      connection,
-      error,
-    );
-    if (failedSig)
-      console.log("Failed signature:", explorerURL({ txSignature: failedSig }));
-
-    throw error;
+      throw error;
+    }
   }
 })();
