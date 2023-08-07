@@ -1,3 +1,7 @@
+<div text-align: center>
+  <img src="/stake.png" width="800" alt="stake_img">
+</div>
+
 # Installation
 
 ```sh
@@ -13,6 +17,7 @@ yarn add @solana/spl-token
 [dependencies]
 anchor-lang = { version = "0.28.0", features = ["init-if-needed"] }
 anchor-spl = "=0.28.0"
+solana-program = "=1.16.7"
 ```
 
 ## Test
@@ -48,4 +53,22 @@ const createMintToken = async () => {
 ```sh
 # replace the declared program id in the lib.rs with this ouptput program id
 solana address -k target/deploy/staking_program-keypair.json
+```
+
+> 🚨 0x1 custom program error
+> https://github.com/solana-labs/solana-program-library/blob/master/token/program/src/error.rs
+> reward(token_vault_account) has no tokens yet
+
+```rust
+/// Errors that may be returned by the Token program.
+#[derive(Clone, Debug, Eq, Error, FromPrimitive, PartialEq)]
+pub enum TokenError {
+    // 0
+    /// ----
+
+    /// Insufficient funds for the operation requested.
+    #[error("Insufficient funds")]
+    InsufficientFunds,
+
+    /// ----
 ```

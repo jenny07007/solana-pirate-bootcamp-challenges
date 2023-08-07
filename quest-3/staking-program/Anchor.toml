@@ -2,7 +2,7 @@
 seeds = false
 skip-lint = false
 [programs.localnet]
-staking_program = "3hxF5FjsRJSrgaVsCniQfE1bdKJaFLJXUufWA6ReQGv9"
+staking_program = "94tBV7uTB2AZpZ3GFX24jhtMKbaBq7v2nJ9jizkjLxSj"
 
 [registry]
 url = "https://api.apr.dev"
