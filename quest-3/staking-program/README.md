@@ -1,5 +1,5 @@
 <div text-align: center>
-  <img src="/stake.png" width="800" alt="stake_img">
+  <img src="stake.png" width="800" alt="stake_img">
 </div>
 
 # Installation
